@@ -1,116 +1,115 @@
 # A2A (Agent-to-Agent) Communication System
 
-Google ADK 기반의 다중 에이전트 통신 시스템입니다. 에이전트끼리 협력하여 사용자 질의에 응답합니다.
+Google ADK 기반의 **진정한 다중 에이전트 통신 시스템**입니다. LLM이 도구를 통해 다른 에이전트와 통신하며 협력합니다.
 
-## � 시스템 흐름도
+## 🎯 핵심 특징
 
-### 전체 아키텍처
+**진짜 A2A (Agent-to-Agent):**
+- ✅ **LLM이 자연어로 의도 파악** - Python Regex/키워드 매칭 없음
+- ✅ **Root Agent가 도구로 다른 에이전트 호출** - 순수 Tool 메커니즘
+- ✅ **에이전트 간 동적 협업** - Broker가 Time + Weather 조율
+- ✅ **확장 가능** - instruction만 수정하면 새 에이전트 추가 가능
+
+## 📊 시스템 아키텍처
+
+### 전체 구조
 ```mermaid
 graph TB
-    User[👤 사용자] --> CLI[🖥️ CLI]
-    CLI --> Root[🎯 Root Agent<br/>대화 기록 관리]
-    CLI --> Router[🔀 Query Router<br/>의도 파악]
+    User[👤 사용자] -->|"서울 날씨"| RootAgent[🎯 Root Agent<br/>LLM 오케스트레이터]
     
-    Router --> Classifier[🧠 Intent Classifier<br/>날씨/시간/복합 분류]
-    Router --> Memory[💾 Session Memory<br/>이름/도시/단위 저장]
+    RootAgent -->|도구 호출| SendWeather[📡 send_to_weather_agent]
+    RootAgent -->|도구 호출| SendTime[📡 send_to_time_agent]
+    RootAgent -->|도구 호출| SendBroker[📡 send_to_broker_agent]
     
-    Router --> A2A[📡 A2A Service]
-    A2A --> Pool[🏊 Runner Pool]
+    SendWeather -->|A2A Service| WeatherAgent[🌤️ Weather Agent]
+    SendTime -->|A2A Service| TimeAgent[⏰ Time Agent]
+    SendBroker -->|A2A Service| BrokerAgent[🤝 Broker Agent]
     
-    Pool --> Weather[🌤️ Weather Agent]
-    Pool --> Time[⏰ Time Agent]
-    Pool --> Broker[🤝 Broker Agent]
+    BrokerAgent -->|도구 호출| SendWeather
+    BrokerAgent -->|도구 호출| SendTime
     
-    Weather --> ToolW[🔧 get_weather]
-    Time --> ToolT[🔧 get_current_time]
+    WeatherAgent -->|get_weather| Tools[🔧 Tool Functions]
+    TimeAgent -->|get_current_time| Tools
     
-    ToolW --> LLM1[🤖 Gemini LLM]
-    ToolT --> LLM2[🤖 Gemini LLM]
+    Tools -->|결과| WeatherAgent
+    Tools -->|결과| TimeAgent
     
-    LLM1 --> Response[💬 응답]
-    LLM2 --> Response
-    Response --> User
+    WeatherAgent -->|응답| SendWeather
+    TimeAgent -->|응답| SendTime
+    
+    SendWeather -->|결과| RootAgent
+    SendTime -->|결과| RootAgent
+    SendBroker -->|결과| RootAgent
+    
+    RootAgent -->|최종 응답| User
+    
+    style RootAgent fill:#4CAF50
+    style BrokerAgent fill:#2196F3
+    style WeatherAgent fill:#FF9800
+    style TimeAgent fill:#9C27B0
 ```
 
-### 사용자 쿼리 처리 흐름
+### 단일 질의 처리 흐름: "서울 날씨"
 ```mermaid
 sequenceDiagram
     participant U as 👤 사용자
     participant C as CLI
-    participant R as Root Agent
-    participant QR as Query Router
-    participant IC as Intent Classifier
-    participant SM as Session Memory
+    participant RA as Root Agent (LLM)
+    participant Tool as send_to_weather_agent
     participant A2A as A2A Service
-    participant WA as Weather Agent
-    participant T as Tool
-    participant LLM as Gemini
-
+    participant WA as Weather Agent (LLM)
+    participant WT as get_weather
+    
     U->>C: "서울 날씨"
-    C->>R: 대화 기록 저장
-    C->>QR: route(query)
+    C->>RA: run_async(message)
     
-    QR->>IC: classify("서울 날씨")
-    IC-->>QR: Intent.WEATHER, "Seoul"
+    Note over RA: LLM이 의도 파악<br/>"날씨 질문이네?"
+    RA->>Tool: 도구 호출("Seoul", user_id, session_id)
     
-    QR->>SM: get_memory()
-    SM-->>QR: {units: "C", home: "Seoul"}
+    Tool->>A2A: send_to_agent("weather_agent")
+    A2A->>WA: Runner.run_async()
     
-    QR->>A2A: send_to_agent("weather_agent")
-    A2A->>WA: run_async(message + context)
+    Note over WA: LLM이 도구 사용 결정
+    WA->>WT: function_call: get_weather("Seoul", "C")
+    WT-->>WA: {"status": "success", "weather": "Cloudy, 5°C"}
     
-    WA->>LLM: "Provide weather for Seoul in C"
-    LLM-->>WA: function_call: get_weather
-    WA->>T: get_weather("Seoul", "C")
-    T-->>WA: {"status": "success", "weather": "Cloudy, 5°C"}
+    Note over WA: LLM이 자연어 생성
+    WA-->>A2A: "서울의 날씨는 흐림, 5°C입니다"
+    A2A-->>Tool: response text
+    Tool-->>RA: response
     
-    WA->>LLM: tool result
-    LLM-->>WA: "서울의 날씨는 흐림, 5°C입니다"
-    WA-->>A2A: response text
-    A2A-->>QR: response
-    QR-->>C: response
-    C-->>U: "서울의 날씨는 흐림, 5°C입니다"
+    Note over RA: Root Agent가 응답 종합
+    RA-->>C: "서울은 현재 흐리고 5도입니다."
+    C-->>U: 최종 응답
 ```
 
-### 컴포넌트별 역할
+### 복합 질의 처리 흐름: "런던 시간과 날씨"
 ```mermaid
-graph LR
-    subgraph "🎨 Frontend"
-        CLI[CLI<br/>사용자 입력/출력]
+sequenceDiagram
+    participant U as 👤 사용자
+    participant RA as Root Agent
+    participant Broker as Broker Agent
+    participant WA as Weather Agent
+    participant TA as Time Agent
+    
+    U->>RA: "런던 시간과 날씨"
+    
+    Note over RA: "복합 질문!"<br/>send_to_broker_agent 사용
+    RA->>Broker: send_to_broker_agent()
+    
+    Note over Broker: "시간과 날씨<br/>둘 다 필요"
+    
+    par Broker가 병렬 호출
+        Broker->>TA: send_to_time_agent("London")
+        TA-->>Broker: "11:30 PM"
+    and
+        Broker->>WA: send_to_weather_agent("London")
+        WA-->>Broker: "Rainy, 8°C"
     end
     
-    subgraph "🧠 Core Logic"
-        Router[Query Router<br/>라우팅]
-        Classifier[Intent Classifier<br/>의도 분류]
-        Memory[Session Manager<br/>상태 관리]
-    end
-    
-    subgraph "📡 A2A Layer"
-        A2A[A2A Service<br/>에이전트 간 통신]
-        Pool[Runner Pool<br/>Runner 관리]
-    end
-    
-    subgraph "🤖 Agents"
-        Weather[Weather Agent]
-        Time[Time Agent]
-        Broker[Broker Agent]
-    end
-    
-    subgraph "🔧 Tools"
-        ToolW[get_weather]
-        ToolT[get_current_time]
-    end
-    
-    CLI --> Router
-    Router --> Classifier
-    Router --> Memory
-    Router --> A2A
-    A2A --> Pool
-    Pool --> Weather
-    Pool --> Time
-    Pool --> Broker
-    Weather --> ToolW
-    Time --> ToolT
+    Note over Broker: 두 응답 종합
+    Broker-->>RA: "런던은 11:30 PM이고<br/>비 오며 8도입니다"
+    RA-->>U: 최종 응답
 ```
 
 ## 🚀 빠른 시작
@@ -131,11 +130,6 @@ pip install google-adk python-dotenv
 
 `.env` 파일 생성:
 ```bash
-cp .env.example .env
-```
-
-`.env` 파일에 API 키 입력:
-```
 GOOGLE_API_KEY=your_actual_api_key_here
 GOOGLE_GENAI_USE_VERTEXAI=False
 ```
@@ -169,12 +163,13 @@ You: 런던 시간과 날씨
 
 ```
 A2A_tutorial/
-├── 📄 a2a_team_cli.py          # CLI 진입점
+├── 📄 a2a_team_cli.py          # CLI 진입점 (Root Agent 직접 호출)
 ├── 📄 requirements.txt         # 의존성
 ├── 📄 .env.example            # 환경변수 템플릿
+├── 📄 test_a2a.py             # A2A 통신 테스트
 └── 📁 my_agent/
-    ├── 📄 tools.py            # 🔧 도구 함수 (get_weather, get_time)
-    ├── 📄 team.py             # 🏗️ 팀 구성 및 초기화
+    ├── 📄 tools.py            # 🔧 도구 함수 (get_weather, get_time, A2A 도구)
+    ├── 📄 team.py             # 🏗️ 팀 구성 및 A2A 도구 연결
     │
     ├── 📁 config/             # ⚙️ 설정
     │   └── settings.py        # 환경변수 로드 및 검증
@@ -186,28 +181,39 @@ A2A_tutorial/
     │
     ├── 📁 services/           # 🔄 비즈니스 로직
     │   ├── runner_pool.py     # Runner 풀 관리
-    │   ├── a2a_service.py     # A2A 통신 서비스
-    │   ├── intent_classifier.py # 의도 분류기
-    │   └── query_router.py    # 쿼리 라우터
+    │   └── a2a_service.py     # A2A 통신 서비스 (핵심!)
     │
     └── 📁 agents/             # 🤖 에이전트 정의
         ├── weather_agent.py   # 날씨 에이전트
         ├── time_agent.py      # 시간 에이전트
-        ├── broker_agent.py    # 중개 에이전트
-        └── root_agent.py      # 루트 에이전트
+        ├── broker_agent.py    # 중개 에이전트 (A2A 도구 보유)
+        └── root_agent.py      # 루트 에이전트 (A2A 도구 보유)
 ```
 
 ## 🎯 핵심 개념
 
 ### 1️⃣ Agent (에이전트)
 - **역할**: 특정 도메인의 작업을 처리하는 LLM 기반 엔티티
-- **예시**: `weather_agent`는 날씨 정보만 제공
+- **종류**:
+  - **Root Agent**: 사용자 요청 진입점, 5개 도구 보유
+  - **Weather Agent**: 날씨 정보 제공 (get_weather 도구)
+  - **Time Agent**: 시간 정보 제공 (get_current_time 도구)
+  - **Broker Agent**: 복합 정보 조율 (A2A 도구 2개)
 - **구성**: `model`, `name`, `instruction`, `tools`
 
 ### 2️⃣ Tool (도구)
-- **역할**: 에이전트가 실제 작업을 수행하는 함수
-- **예시**: `get_weather(city, units)` - 도시 날씨 조회
-- **특징**: LLM이 자동으로 호출 여부 결정
+**데이터 도구:**
+- `get_weather(city, units)` - 날씨 데이터 조회
+- `get_current_time(city)` - 시간 데이터 조회
+
+**A2A 통신 도구 (핵심!):**
+- `send_to_weather_agent(city, user_id, session_id)` - Weather Agent 호출
+- `send_to_time_agent(city, user_id, session_id)` - Time Agent 호출
+- `send_to_broker_agent(city, user_id, session_id)` - Broker Agent 호출
+
+**메모리 도구:**
+- `update_user_name(name, user_id, session_id)` - 이름 설정
+- `update_preferred_units(units, user_id, session_id)` - 온도 단위 설정
 
 ### 3️⃣ Runner
 - **역할**: 에이전트를 실행하고 대화 관리
@@ -215,84 +221,67 @@ A2A_tutorial/
 - **관리**: `RunnerPool`이 각 에이전트별 Runner 관리
 
 ### 4️⃣ A2A Service
-- **역할**: 에이전트 간 통신 조율
-- **메커니즘**: `send_to_agent()` → Runner 찾기 → `run_async()` 호출
-- **응답 처리**: 이벤트 스트림에서 최종 텍스트 추출
+- **역할**: 에이전트 간 통신의 핵심 레이어
+- **위치**: `my_agent/services/a2a_service.py`
+- **메커니즘**: 
+  1. `send_to_agent(agent_name, message, ...)` 호출
+  2. `RunnerPool`에서 대상 에이전트의 Runner 가져오기
+  3. `runner.run_async()` 호출로 에이전트 실행
+  4. 이벤트 스트림에서 최종 텍스트 추출 및 반환
 
 ### 5️⃣ Session Memory
 - **역할**: 사용자별 개인화 데이터 저장
 - **저장 항목**: `user_name`, `home_city`, `preferred_units`
-- **활용**: 쿼리 라우팅 시 기본값으로 사용
+- **활용**: A2A 도구 호출 시 컨텍스트 제공
 
-### 6️⃣ Intent Classifier
-- **역할**: 사용자 입력에서 의도 파악
-- **분류**: WEATHER, TIME, COMBINED, SET_NAME, SET_UNITS
-- **추출**: 엔티티 (도시명) 추출
+## 🔄 A2A 통신의 진짜 의미
 
-## 🔄 A2A 통신 과정
+### ❌ Before (가짜 A2A - Python 라우팅)
+```
+사용자 → Python Router (Regex 매칭) → 에이전트 선택 → 실행
+```
+- Python 코드가 의도 파악
+- if/else로 라우팅
+- 에이전트는 서로 몰라요
 
-### 단계별 상세 흐름
+### ✅ After (진짜 A2A - Tool 기반)
+```
+사용자 → Root Agent (LLM) → 도구 선택 → send_to_X_agent() → A2A Service → 에이전트 실행
+```
+- **LLM이 의도 파악**
+- **도구로 에이전트 호출**
+- **에이전트가 에이전트를 호출!**
 
-1. **사용자 입력**
-   - CLI에서 "서울 날씨" 입력
+### 핵심 차이점
 
-2. **Root Agent 기록**
-   - Root Runner가 대화 히스토리에 저장
-   - 이후 대화 컨텍스트 유지
-
-3. **의도 분류**
-   - `IntentClassifier`가 쿼리 분석
-   - "날씨" 키워드 감지 → `Intent.WEATHER`
-   - "서울" 추출 → entity: "Seoul"
-
-4. **메모리 조회**
-   - `SessionManager`에서 사용자 설정 로드
-   - preferred_units: "C", home_city: "Seoul"
-
-5. **A2A 호출**
-   - `QueryRouter` → `A2AService.send_to_agent()`
-   - 대상: "weather_agent"
-   - 메시지: "Provide weather for Seoul in C. Use get_weather tool."
-   - 컨텍스트: "(User:JK, Home:Seoul, Units:C)"
-
-6. **Weather Agent 실행**
-   - `RunnerPool`에서 weather_agent의 Runner 가져오기
-   - `runner.run_async()` 호출
-   - LLM이 instruction 읽고 도구 사용 결정
-
-7. **Tool 실행**
-   - LLM이 `function_call: get_weather("Seoul", "C")` 생성
-   - ADK가 자동으로 `get_weather()` 함수 호출
-   - 반환: `{"status": "success", "weather": "Cloudy, 5°C"}`
-
-8. **LLM 응답 생성**
-   - 도구 결과를 다시 LLM에 전달
-   - LLM이 자연어로 변환: "서울의 날씨는 흐림이며 기온은 5°C입니다."
-
-9. **응답 추출 및 반환**
-   - `A2AService`가 이벤트 스트림에서 최종 텍스트만 추출
-   - `QueryRouter` → CLI → 사용자에게 출력
+| 항목 | Before (가짜 A2A) | After (진짜 A2A) |
+|------|-------------------|------------------|
+| 의도 파악 | Python Regex | LLM 자연어 이해 |
+| 라우팅 결정 | Python if/else | LLM 도구 선택 |
+| 에이전트 호출 | Python 함수 호출 | Tool 메커니즘 |
+| Broker 역할 | 없음 | 하위 에이전트 조율 |
+| 확장성 | 코드 수정 필요 | instruction만 수정 |
 
 ## 📝 지원 명령
 
 - **날씨 조회**: "서울 날씨", "Tokyo weather"
 - **시간 조회**: "도쿄 시간", "London time"
-- **복합 조회**: "런던 시간과 날씨"
-- **이름 설정**: "내 이름은 JK", "My name is JK"
+- **복합 조회**: "런던 시간과 날씨" (Broker 사용)
+- **이름 설정**: "내 이름은 JK"
 - **단위 설정**: "단위를 섭씨로", "단위를 화씨로"
 
 ## 🔧 확장 가이드
 
-### 새 에이전트 추가하기
+### 새 에이전트 추가하기 (진짜 A2A 방식)
 
-1. **도구 함수 작성** ([`my_agent/tools.py`](my_agent/tools.py ))
+#### 1. 도구 함수 작성 (`my_agent/tools.py`)
 ```python
 def get_stock_price(symbol: str) -> dict:
     """주식 가격 조회"""
     return {"status": "success", "symbol": symbol, "price": "150.25"}
 ```
 
-2. **에이전트 생성** (`my_agent/agents/stock_agent.py`)
+#### 2. 에이전트 생성 (`my_agent/agents/stock_agent.py`)
 ```python
 from google.adk.agents import Agent
 from ..tools import get_stock_price
@@ -303,55 +292,113 @@ def create_stock_agent() -> Agent:
         model="gemini-2.0-flash",
         description="주식 가격 정보 제공",
         instruction="Use get_stock_price tool to fetch stock prices.",
-        tools=[get_stock_price],
+        tools=[get_stock_price],  # 데이터 도구
     )
 ```
 
-3. **팀에 등록** ([`my_agent/team.py`](my_agent/team.py ))
+#### 3. A2A 통신 도구 추가 (`my_agent/tools.py`)
+```python
+def create_a2a_tools(a2a_service, session_manager):
+    # 기존 도구들...
+    
+    async def send_to_stock_agent(symbol: str, user_id: str, session_id: str) -> str:
+        """Send request to stock agent."""
+        return await a2a_service.send_to_agent(
+            agent_name="stock_agent",
+            message=f"Get stock price for {symbol}",
+            user_id=user_id,
+            session_id=session_id
+        )
+    
+    return {
+        # 기존 도구들...
+        "send_to_stock_agent": send_to_stock_agent,
+    }
+```
+
+#### 4. Root Agent에 도구 추가 (`my_agent/agents/root_agent.py`)
+```python
+def create_root_agent(a2a_tools: dict) -> Agent:
+    return Agent(
+        name="root_agent",
+        instruction=(
+            "You are the root orchestrator agent. Your role is to:\n"
+            "...\n"
+            "- send_to_stock_agent(symbol, user_id, session_id): Get stock price\n"  # 추가!
+            "..."
+        ),
+        tools=[
+            # 기존 도구들...
+            a2a_tools["send_to_stock_agent"],  # 추가!
+        ],
+    )
+```
+
+#### 5. 팀에 등록 (`my_agent/team.py`)
 ```python
 from .agents import create_stock_agent
 
-self.stock_agent = create_stock_agent()
-self.runner_pool.register_agent(self.stock_agent)
+class AgentTeam:
+    def __init__(self, session_service, app_name):
+        # ...
+        self.stock_agent = create_stock_agent()
+        self.runner_pool.register_agent(self.stock_agent)
 ```
 
-4. **의도 추가** ([`my_agent/services/intent_classifier.py`](my_agent/services/intent_classifier.py ))
-```python
-class Intent(Enum):
-    STOCK = "stock"  # 추가
+**끝!** Root Agent의 LLM이 자동으로 새 도구를 인식하고 사용합니다.
 
-# classify() 메서드에 로직 추가
-if "주가" in q or "stock" in q:
-    return (Intent.STOCK, self._extract_symbol(q))
-```
+### 진짜 A2A의 장점
 
-5. **라우팅 추가** ([`my_agent/services/query_router.py`](my_agent/services/query_router.py ))
-```python
-elif intent == Intent.STOCK:
-    return await self.a2a_service.send_to_agent(
-        agent_name="stock_agent",
-        message=f"Get stock price for {entity}",
-        ...
-    )
-```
+1. **Python 코드 수정 최소화**: instruction만 업데이트
+2. **LLM이 자동 학습**: 도구 사용법을 자연어 instruction에서 학습
+3. **동적 조합**: Broker 같은 조정자가 여러 에이전트 동적으로 호출
+4. **확장성**: 에이전트 추가 시 기존 로직 영향 없음
 
 ## 🐛 문제 해결
 
 ### "Agent not found" 오류
 - `RunnerPool`에 에이전트가 등록되었는지 확인
-- [`my_agent/team.py`](my_agent/team.py )의 `__init__`에서 `register_agent()` 호출 확인
+- `my_agent/team.py`의 `__init__`에서 `register_agent()` 호출 확인
 
 ### "Session not found" 오류
 - CLI에서 `ensure_session()` 호출 확인
 - `session_service.create_session()` 선행 실행 필요
 
 ### "function_call" 경고
-- 정상 동작이며 무시 가능
-- 도구가 실행되고 있다는 신호
+- **정상 동작이며 무시 가능**
+- 도구가 실행되고 있다는 신호 (LLM이 도구 호출 중)
 
 ### API 키 오류
 - `.env` 파일에 `GOOGLE_API_KEY` 설정 확인
 - `python-dotenv` 설치 및 `load_dotenv()` 호출 확인
+
+### 응답이 없음
+- Root Agent의 instruction 확인
+- 도구 이름과 파라미터가 올바른지 확인
+- A2A 도구가 `create_a2a_tools()`에 포함되었는지 확인
+
+## 🎓 핵심 학습 포인트
+
+### A2A란 무엇인가?
+
+**정의**: Agent가 Tool을 통해 다른 Agent를 **동적으로** 호출하는 패턴
+
+**구현 방식**:
+1. A2A 통신 도구 생성 (`send_to_X_agent`)
+2. 도구를 상위 에이전트에 등록
+3. LLM이 자연어 instruction에서 사용법 학습
+4. LLM이 상황에 맞게 도구 선택 및 호출
+
+**장점**:
+- 유연성: LLM이 동적으로 판단
+- 확장성: 새 에이전트 추가 용이
+- 조합성: Broker 패턴으로 복잡한 워크플로우 구성
+
+## 📚 참고 자료
+
+- [Google ADK Documentation](https://github.com/google/agentic-developer-kit)
+- [Gemini API Documentation](https://ai.google.dev/docs)
+- [GETTING_STARTED.md](GETTING_STARTED.md) - 초보자 가이드
 
 ## 📄 라이선스
 

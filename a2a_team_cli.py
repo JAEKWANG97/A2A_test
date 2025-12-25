@@ -17,20 +17,28 @@ SESSION_ID = "sess_001"
 
 
 async def talk_to_agent(team, user_text: str):
-    """Send user message and get response."""
-    # Record conversation with root agent
+    """Send user message directly to root agent and get response."""
     content = types.Content(role="user", parts=[types.Part(text=user_text)])
+    
+    response_texts = []
     async for event in team.root_runner.run_async(
         user_id=USER_ID,
         session_id=SESSION_ID,
         new_message=content
     ):
-        if event.is_final_response():
-            break
+        # Collect text parts from response
+        if hasattr(event, 'candidate') and event.candidate:
+            if hasattr(event.candidate, 'content') and event.candidate.content:
+                for part in event.candidate.content.parts:
+                    if hasattr(part, 'text') and part.text:
+                        response_texts.append(part.text)
     
-    # Route query to appropriate agent via query router
-    answer = await team.query_router.route(user_text, USER_ID, SESSION_ID)
-    print(f">>> {user_text}\n<<< {answer}\n")
+    # Combine and display response
+    answer = ''.join(response_texts).strip()
+    if answer:
+        print(f">>> {user_text}\n<<< {answer}\n")
+    else:
+        print(f">>> {user_text}\n<<< (응답 없음)\n")
 
 
 async def main():
