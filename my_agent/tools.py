@@ -90,27 +90,6 @@ def create_a2a_tools(a2a_service, session_manager):
             context_prefix=context
         )
     
-    async def send_to_broker_agent(city: str, user_id: str, session_id: str) -> str:
-        """Send request to broker agent for combined information.
-        
-        Args:
-            city: City name to get combined time and weather for
-            user_id: User ID for session context
-            session_id: Session ID for session context
-            
-        Returns:
-            Combined time and weather information from broker agent
-        """
-        memory = session_manager.get_memory(user_id, session_id)
-        context = memory.get_context_prefix()
-        return await a2a_service.send_to_agent(
-            agent_name="broker_agent",
-            message=f"Coordinate time and weather information for {city}.",
-            user_id=user_id,
-            session_id=session_id,
-            context_prefix=context
-        )
-    
     def update_user_name(name: str, user_id: str, session_id: str) -> str:
         """Update user's name preference.
         
@@ -144,7 +123,6 @@ def create_a2a_tools(a2a_service, session_manager):
     return {
         "send_to_weather_agent": send_to_weather_agent,
         "send_to_time_agent": send_to_time_agent,
-        "send_to_broker_agent": send_to_broker_agent,
         "update_user_name": update_user_name,
         "update_preferred_units": update_preferred_units,
     }

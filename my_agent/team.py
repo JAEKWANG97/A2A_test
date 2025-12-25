@@ -1,6 +1,6 @@
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from .agents import create_weather_agent, create_time_agent, create_broker_agent, create_root_agent
+from .agents import create_weather_agent, create_time_agent, create_root_agent
 from .services import RunnerPool, A2AService
 from .core import SessionManager
 from .tools import create_a2a_tools
@@ -16,7 +16,7 @@ class AgentTeam:
         # Initialize core services
         self.session_manager = SessionManager(session_service)
         self.runner_pool = RunnerPool(session_service, app_name)
-        self.a2a_service = A2AService(self.runner_pool)
+        self.a2a_service = A2AService(self.runner_pool, self.session_manager)
         
         # Create A2A tools with service dependencies
         a2a_tools = create_a2a_tools(self.a2a_service, self.session_manager)
@@ -24,13 +24,11 @@ class AgentTeam:
         # Create agents
         self.weather_agent = create_weather_agent()
         self.time_agent = create_time_agent()
-        self.broker_agent = create_broker_agent(a2a_tools)
         self.root_agent = create_root_agent(a2a_tools)
         
         # Register all agents in runner pool
         self.runner_pool.register_agent(self.weather_agent)
         self.runner_pool.register_agent(self.time_agent)
-        self.runner_pool.register_agent(self.broker_agent)
         
         # Create root runner (main entry point)
         self.root_runner = Runner(

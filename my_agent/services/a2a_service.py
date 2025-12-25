@@ -7,8 +7,9 @@ from ..core.exceptions import AgentNotFoundError, ToolExecutionError
 class A2AService:
     """Handles agent-to-agent communication via Runner."""
     
-    def __init__(self, runner_pool: RunnerPool):
+    def __init__(self, runner_pool: RunnerPool, session_manager=None):
         self.runner_pool = runner_pool
+        self.session_manager = session_manager
     
     async def send_to_agent(
         self,
@@ -38,6 +39,14 @@ class A2AService:
             raise AgentNotFoundError(f"Agent '{agent_name}' not found")
         
         try:
+            # Ensure session exists before calling agent
+            if self.session_manager:
+                await self.session_manager.ensure_session(
+                    self.runner_pool.app_name,
+                    user_id,
+                    session_id
+                )
+            
             runner = self.runner_pool.get_runner(agent_name)
             full_message = context_prefix + message
             content = types.Content(role="user", parts=[types.Part(text=full_message)])
