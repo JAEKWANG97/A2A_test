@@ -50,6 +50,14 @@ Thumbs.db
 # Logs
 *.log
 
-# Backup files with sensitive data
-my_agent/agent.py.backup
-agent.py.backup
+# Backup and deprecated files
+my_agent/agent.py
+my_agent/broker_agent.py
+my_agent/time_agent.py
+my_agent/weather_agent.py
+my_agent/root_agent.py
+my_agent/registry.py
+my_agent/router.py
+my_agent/session.py
+a2a_tutorial.py
+*.backup
